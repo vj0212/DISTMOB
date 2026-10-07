@@ -2,19 +2,42 @@
 
 ## Disturbance-Aware Mobility Control for Mobile Networks
 
-**DISTMOB** is a research-engineering simulation project that studies a practical question:
+**DISTMOB** is a research-engineering simulation project studying a practical network-control problem:
 
-> **When a person is moving through a wireless network, how should the system decide which Access Point (AP) they should be connected to when signal quality, congestion, and disturbances keep changing?**
+> **When users move through a wireless network, how should the system decide which Access Point (AP) each user should be associated with when signal quality, congestion, mobility, and disturbances keep changing?**
 
-In everyday life, this is the problem behind situations such as:
+In everyday life, this is similar to what happens when:
 
-- Walking through a building while your phone moves from one Wi-Fi AP to another.
-- Moving through a crowded area where one AP becomes overloaded.
-- Staying connected while the quality of the current AP deteriorates.
-- Avoiding unnecessary AP switches that can interrupt connectivity.
-- Making a decision not only based on **what is best right now**, but also on **what is likely to happen a few moments from now**.
+- you walk through a building and your phone moves between Wi-Fi APs;
+- one AP becomes crowded while another has spare capacity;
+- the signal from your current AP gradually deteriorates;
+- temporary disturbances affect network quality;
+- switching too aggressively causes unnecessary handovers;
+- the best decision depends not only on **what is best now**, but also on **what is likely to happen next**.
 
-DISTMOB models this as a dynamic AP-association and control problem and compares several increasingly sophisticated strategies, from simple signal-based rules to predictive control, global optimization, supervisory safety logic, and a lightweight reinforcement-learning baseline.
+DISTMOB models this as a **dynamic AP-association and control problem** and compares classical handover rules, load-aware association, predictive disturbance-aware control, robustness and safety extensions, a constrained global assignment planner, a supervisory controller, and a lightweight tabular reinforcement-learning baseline.
+
+---
+
+# At a Glance
+
+| | Result |
+|---|---:|
+| **Controllers evaluated** | 11 |
+| **Paired robustness seeds** | 10 |
+| **Stress combinations** | 6 |
+| **Primary comparison** | Stable-global vs Load-aware |
+| **Outage** | 0.2602 → **0.1692** |
+| **Jain fairness** | 0.7757 → **0.8674** |
+| **Latency proxy** | 1.8111 → **1.3416** |
+| **Handover rate** | 0.2420 → **0.00142** |
+| **P05 throughput** | 3.4521 → **3.0335 Mbps** |
+| **P05 throughput trade-off** | **−12.1%** |
+| **Mean handovers, switch penalty ON** | **4.4** |
+| **Mean handovers, switch penalty OFF** | **109.9** |
+| **Served-demand improvement** | Positive, but **not statistically significant after Holm correction** |
+
+**Important:** These are results under the stated synthetic simulation model. They are not claims of universal network superiority or field validation.
 
 ---
 
@@ -36,7 +59,7 @@ Imagine a person walking through a large building:
 
 At the beginning, AP 1 may be the best choice.
 
-As the person moves:
+As the user moves:
 
 - AP 1's signal may weaken.
 - AP 2 may become stronger.
@@ -44,27 +67,101 @@ As the person moves:
 - A temporary disturbance may affect either AP.
 - Switching too aggressively may cause unnecessary handovers.
 
-So the system continuously faces a decision:
+So the system repeatedly faces a decision:
 
-> **Stay with the current AP, or switch to another AP?**
+> **Should the user remain associated with the current AP, or switch to another AP?**
 
-With many users, this becomes more difficult because the decision for one user can affect everyone else through congestion and AP capacity.
+With many users, this becomes a network-level problem because assigning one user to an AP changes that AP's load and can therefore affect other users.
 
-DISTMOB therefore treats **AP association as a dynamic control problem** rather than simply choosing the strongest signal.
+DISTMOB therefore treats **AP association as a dynamic control problem**, rather than simply selecting the strongest signal.
+
+### AP association vs handover
+
+These terms are related but not identical:
+
+- **AP association:** which AP a user is assigned/connected to at a particular time.
+- **Handover:** a change in that association from one AP to another.
+
+For example:
+
+```text
+t1     User 1 → AP1
+t2     User 1 → AP1
+t3     User 1 → AP1
+t4     User 1 → AP2   ← handover
+t5     User 1 → AP2
+```
+
+DISTMOB therefore studies both **which AP should serve each user** and **how often those assignments should change**.
 
 ---
 
-# 2. Where We Started → Where We Reached
+# 2. Why Go Beyond "Connect to the Strongest AP"?
 
-The project evolved through several iterations rather than starting with the final controller.
+A natural starting point is:
 
-### Starting point
+> **"Just connect each user to the AP with the strongest signal."**
 
-The initial question was simple:
+That works as a useful baseline, but it ignores several interactions.
 
-> **Can a disturbance-aware controller make better AP-association decisions than conventional handover rules?**
+### Problem 1 — Signal is not the whole story
 
-The first versions focused on local, user-level decisions such as:
+A strong AP can already be heavily loaded.
+
+```text
+AP1: ████████████████████  95% loaded
+AP2: ███████               35% loaded
+```
+
+Sending another user to AP1 simply because its signal is stronger may hurt the network overall.
+
+### Problem 2 — Users are moving
+
+The AP that is best **right now** may not remain best a few seconds later.
+
+### Problem 3 — Disturbances change the environment
+
+A temporary disturbance can change link quality even when the user's physical position has barely changed.
+
+### Problem 4 — Users interact through shared AP capacity
+
+The association decision for User A can affect User B because both may compete for the same AP resources.
+
+### Problem 5 — Switching has a cost
+
+Always chasing the currently best AP can produce excessive handovers.
+
+Therefore, DISTMOB progressively asks:
+
+```text
+Can we make a better local decision?
+        ↓
+Can we account for congestion?
+        ↓
+Can we account for future conditions?
+        ↓
+Can we account for uncertainty and risk?
+        ↓
+Can we coordinate users globally?
+        ↓
+Can we explicitly control the cost of switching?
+```
+
+This is the motivation for moving from simple local policies toward **Stable-global**.
+
+---
+
+# 3. Where We Started → Where We Reached
+
+The project evolved through multiple iterations rather than beginning with the final controller.
+
+## Starting point
+
+The original research question was:
+
+> **Can disturbance-aware control make better AP-association decisions than conventional handover rules?**
+
+The first versions focused on local, user-level strategies:
 
 - RSSI-based association
 - Hysteresis
@@ -74,49 +171,61 @@ The first versions focused on local, user-level decisions such as:
 
 During development, several assumptions were challenged.
 
-For example, an early version of the predictive controller did not actually propagate future user mobility correctly. The planner's internal rate model also differed from the evaluator's authoritative model.
+For example:
 
-Instead of hiding these problems, the project turned them into explicit experiments.
+- an early predictive implementation did not correctly propagate future user mobility;
+- the planner's internal rate model differed from the authoritative evaluation model;
+- average throughput alone did not adequately reveal the QoS/stability trade-off.
 
-### Where we reached
+Rather than hiding these problems, the project converted them into explicit experiments and design changes.
+
+## Where we reached
 
 The final system contains:
 
-- **10 paired random seeds** for robustness analysis
-- **6 stress combinations** across disturbance and mobility
-- predictive horizon sensitivity experiments
-- planner/evaluator model-mismatch experiments
-- zero-switch-penalty ablation
-- tail-QoS analysis
-- statistical significance testing
-- runtime benchmarking
-- trace-driven replay
-- an optional external-trace validation path
-- reproducible experiment and report-generation scripts
+- **10 paired random seeds** for robustness analysis;
+- **6 disturbance/mobility stress combinations**;
+- prediction-horizon sensitivity experiments;
+- planner/evaluator model-mismatch experiments;
+- an explicit oracle-planner control condition;
+- zero-switch-penalty ablation;
+- tail-QoS analysis;
+- paired statistical testing;
+- runtime benchmarking;
+- trace-driven replay;
+- an optional external-trace validation path;
+- reproducible experiment and report-generation scripts;
+- automated tests and final-release validation.
 
-The project ultimately became less about proving that **one controller always wins** and more about understanding **why a particular policy works, where it fails, and what trade-offs it introduces**.
+The project ultimately became less about proving:
+
+> **"One controller always wins."**
+
+and more about answering:
+
+> **"Why does a policy behave the way it does, where does it fail, what assumptions does it depend on, and what trade-offs does it introduce?"**
 
 ---
 
-# 3. The Controllers
+# 4. The Controllers
 
 DISTMOB compares progressively more sophisticated association strategies.
 
-| Controller | Everyday interpretation |
-|---|---|
-| **RSSI** | "Connect to whichever AP looks strongest right now." |
-| **Hysteresis** | "Don't switch unless the new AP is clearly better." |
-| **TTT** | "Wait and see whether the new AP remains better." |
-| **Load-aware** | "Avoid APs that are already crowded." |
-| **DARC-no-observer** | "Use the current disturbance directly." |
-| **DARC** | "Estimate disturbance and account for what may happen next." |
-| **Robust-DARC** | "Also consider mobility and uncertainty." |
-| **Shield-DARC** | "When conditions become risky, behave more conservatively." |
-| **Regime orchestrator** | "Change control strategy depending on the current operating regime." |
-| **Stable-global** | "Coordinate all user-AP assignments globally while explicitly penalizing unnecessary switching." |
-| **Q-learning** | "Learn association decisions from interaction with the simulated environment." |
+| Controller | Core idea | Everyday interpretation |
+|---|---|---|
+| **RSSI** | Highest current signal/link score | "Use whichever AP looks strongest now." |
+| **Hysteresis** | Switch only after a sufficient advantage | "Don't switch for a tiny improvement." |
+| **TTT** | Candidate must remain better for a period | "Wait and make sure the improvement is real." |
+| **Load-aware** | Penalize congested APs | "Don't send everyone to the crowded AP." |
+| **DARC-no-observer** | Direct disturbance input | "Use the disturbance we see now." |
+| **DARC** | Disturbance observer + finite-horizon prediction | "Estimate what may happen next." |
+| **Robust-DARC** | Adds mobility/uncertainty penalties | "Be more cautious when conditions are uncertain." |
+| **Shield-DARC** | Risk-triggered conservative mode | "When things look dangerous, switch to a safer policy." |
+| **Regime orchestrator** | Supervisory switching among modes | "Change strategy depending on the network regime." |
+| **Stable-global** | Joint constrained AP assignment + switch penalty | "Coordinate all users instead of optimizing each user independently." |
+| **Q-learning** | Tabular RL baseline | "Learn decisions through interaction with the environment." |
 
-The central distinction is:
+The overall progression is:
 
 ```text
 Simple rules
@@ -134,13 +243,59 @@ Supervisory control
 
 ---
 
-# 4. What the Final System Actually Optimizes
+# 5. Why Stable-global?
 
-DISTMOB does not define success as simply getting the highest instantaneous throughput.
+The purpose of Stable-global is **not** to assume that more complex optimization must be better.
 
-The system evaluates multiple objectives:
+It tests a specific hypothesis:
 
-### Quality of service
+> **Because users compete for shared AP capacity, jointly optimizing user-AP assignments may produce better network-level outcomes than making each association decision independently.**
+
+Local policies primarily reason about an individual user's current situation.
+
+Stable-global instead considers the assignment of users across APs together while incorporating:
+
+- AP capacity;
+- demand gaps;
+- switching cost;
+- mobility/risk terms;
+- planner-side rate estimates.
+
+Conceptually:
+
+```text
+Local policy:
+
+User 1 → best AP for User 1
+User 2 → best AP for User 2
+User 3 → best AP for User 3
+             ↓
+       network interaction
+```
+
+versus:
+
+```text
+Stable-global:
+
+User 1 ─┐
+User 2 ─┼──→ Joint assignment problem ──→ AP assignments
+User 3 ─┘
+             ↓
+       network-level objective
+```
+
+This does **not** mean Stable-global is universally better. It means the project explicitly tests whether the additional global coordination is worth its complexity and what trade-offs it creates.
+
+---
+
+# 6. What the System Actually Optimizes
+
+DISTMOB does not define success as simply maximizing instantaneous throughput.
+
+It evaluates several dimensions.
+
+## Quality of service
 
 - Served-demand fraction
 - Mean satisfaction
@@ -148,169 +303,211 @@ The system evaluates multiple objectives:
 - P05 throughput
 - Outage
 
-### Network fairness
+## Network fairness
 
 - Jain's fairness index
 
-### Stability
+## Stability
 
 - Handover rate
 - Total handovers
 
-### Responsiveness
+## Responsiveness
 
 - Latency proxy
 
-This matters because a controller can improve one metric while making another worse.
+This matters because improving one metric can hurt another.
 
 For example:
 
-> A policy that constantly switches users between APs might find slightly better short-term connections but create excessive mobility churn.
+> A controller that constantly switches users may find slightly better instantaneous links while creating excessive mobility churn.
 
-DISTMOB therefore treats **QoS and stability as competing objectives**.
+DISTMOB therefore evaluates **QoS, fairness, responsiveness, and stability together**.
 
 ---
 
-# 5. Primary Result — 10 Paired Seeds
+# 7. Primary Evidence — 10 Paired Seeds
 
 The main robustness comparison uses **10 paired random seeds** rather than relying on a single simulation run.
 
-### Stable-global vs Load-aware
+## Stable-global vs Load-aware
 
-| Metric | Load-aware | Stable-global | Interpretation |
-|---|---:|---:|---|
-| Served-demand fraction | **0.9275** | **0.9482** | +2.07 percentage points |
-| Outage | **0.2602** | **0.1692** | ↓ ~35% |
-| Jain fairness | **0.7757** | **0.8674** | Higher fairness |
-| Latency proxy | **1.8111** | **1.3416** | ↓ ~26% |
-| Handover rate | **0.2420** | **0.00142** | Dramatically lower |
-| P05 throughput | **3.4521 Mbps** | **3.0335 Mbps** | ↓ 12.1% |
+| Metric | Load-aware | Stable-global | Change |
+|---|---:|---:|---:|
+| Served-demand fraction | **0.9275** | **0.9482** | +0.0207 |
+| Outage | **0.2602** | **0.1692** | −35.0% |
+| Jain fairness | **0.7757** | **0.8674** | +0.0917 |
+| Latency proxy | **1.8111** | **1.3416** | −25.9% |
+| Handover rate | **0.2420** | **0.00142** | ≈−99.4% |
+| P05 throughput | **3.4521 Mbps** | **3.0335 Mbps** | **−12.1%** |
 
-### What this means in everyday language
+### What the numbers mean
 
-The stable-global policy behaves more like a **careful traffic manager**.
+Under the tested simulation model, Stable-global produces:
 
-Instead of constantly chasing whichever AP looks slightly better, it coordinates assignments across users and penalizes unnecessary switching.
+- lower outage;
+- higher Jain fairness;
+- lower latency proxy;
+- dramatically fewer handovers;
 
-The result is:
+while paying a measurable **12.1% P05-throughput cost**.
 
-- fewer users falling into outage,
-- more balanced resource usage,
-- lower latency proxy,
-- dramatically less AP switching,
+The served-demand fraction also improves:
 
-but with a measurable cost:
+```text
+0.9275 → 0.9482
+```
 
-> **The bottom 5% of throughput becomes worse.**
+but this improvement is **not statistically significant after Holm correction**.
 
-That trade-off is deliberately reported rather than hidden.
+That distinction matters: the mean difference is useful evidence, but it should not be presented as statistically established superiority.
 
 ---
 
-# 6. The Most Interesting Result: Stability Has a Cost — and a Cause
+# 8. The Main Trade-off
 
-One important question was:
+The project does **not** claim that Stable-global improves every metric.
 
-> **Why does stable-global produce such low handover rates?**
+The clearest documented trade-off is:
 
-Was it genuinely because of the stability term, or was the simulator somehow making users naturally stable?
+```text
+                         Load-aware   Stable-global
+P05 throughput           3.4521 Mbps  3.0335 Mbps
+                                      ↓
+                                    −12.1%
+```
 
-To answer this, the project removes the explicit switch penalty.
+In everyday terms:
 
-### Zero-switch-penalty ablation
+> Stable-global does a better job keeping the overall network stable and fair under the tested model, but the bottom tail of users can receive less throughput.
+
+This is exactly why P05 metrics are included.
+
+Looking only at averages could have hidden this behavior.
+
+---
+
+# 9. The Most Important Ablation — Why Is Churn So Low?
+
+Stable-global produces extremely low handover rates.
+
+That raises an important question:
+
+> **Is the low churn actually caused by the stability term, or is it simply an artifact of the simulated environment?**
+
+To test this, the explicit switch penalty is removed.
+
+## Zero-switch-penalty ablation
 
 ```text
 Stable-global
-    ↓
-Switch penalty ON
-    ↓
+     │
+     │ switch penalty ON
+     ▼
 ~4.4 mean handovers
 
 
 Stable-global-no-switch
-    ↓
-Switch penalty OFF
-    ↓
+     │
+     │ switch penalty OFF
+     ▼
 ~109.9 mean handovers
 ```
 
-That's approximately a **25× increase in mean handovers**.
+This is approximately a **25× increase** in mean handovers.
 
 Interestingly, removing the penalty improves some QoS metrics.
 
-This gives an important causal interpretation:
+### Interpretation
 
-> **The low-churn behavior is not simply a property of the environment. It is produced by the stability regularization in the optimization objective.**
+The ablation provides strong evidence that the low-churn behavior is specifically associated with the **switch-regularization term** in the tested optimization setup, rather than being merely a property of the environment.
 
 In everyday terms:
 
-> If you tell the system, **"Don't unnecessarily move people between APs,"** it actually learns/optimizes for staying put. If you remove that rule, it becomes much more willing to chase better instantaneous opportunities.
+> If the system is explicitly told that unnecessary AP switching has a cost, it prefers to stay with a reasonable AP rather than constantly chase small short-term improvements.
+
+Remove that cost, and the optimizer becomes much more willing to switch.
 
 ---
 
-# 7. Planner vs Evaluator — Avoiding an Unrealistic "Oracle"
+# 10. Planner vs Evaluator — What If the Model Is Wrong?
 
-Another important methodological question was:
+A major methodological concern is:
 
-> **Does the global planner know exactly what the evaluator will use to score the network?**
+> **Does the global planner know exactly the same model that the evaluator uses?**
 
-If yes, the planner effectively gets privileged information.
+If it did, the planner could effectively receive privileged information.
 
-To avoid hiding this issue, DISTMOB deliberately uses an **imperfect fixed planner proxy**:
+DISTMOB therefore uses an intentionally imperfect fixed planner proxy for the main Stable-global condition:
 
 ```text
-Planner model
+Planner-side model
+
 pathloss exponent = 2.60
 SNR bias          = -1.20 dB
 rate scale        = 7.60
+
         ↓
-makes decisions
+
+Planner chooses assignments
+
         ↓
+
 Authoritative evaluator
+
         ↓
-measures actual outcome
+
+Actual simulated outcome
 ```
 
-The project also includes:
+The project also contains:
 
 ### `stable_global_oracle`
 
-This version gives the planner the evaluator-matched model and is used as a sensitivity/control condition.
+This control condition gives the planner an evaluator-matched model.
 
-The final release therefore distinguishes between:
+The release therefore distinguishes between:
 
-- normal planner assumptions,
-- oracle planner assumptions,
-- model mismatch,
+- normal planner assumptions;
+- oracle planner assumptions;
+- planner/evaluator mismatch;
 - actual evaluated performance.
 
-This makes the global-planner results more defensible.
+This prevents the main result from quietly depending on a perfectly matched internal model.
 
 ---
 
-# 8. Model-Mismatch Experiment
+# 11. Model-Mismatch Experiment
 
-The project explicitly tests what happens when the planner's internal model becomes increasingly different from the evaluator.
+The project explicitly tests increasing disagreement between the planner's internal model and the authoritative evaluator.
 
-The purpose is not to claim:
+The question is:
 
-> "The planner is perfect."
+> **Does the global-assignment approach remain useful when its internal model is wrong?**
 
-Instead, the question is:
+The experiment includes:
 
-> **Does the approach remain useful when its internal model is wrong?**
+- mild mismatch;
+- moderate mismatch;
+- strong mismatch;
 
-The experiment includes mild, moderate and strong mismatch conditions and tracks the resulting internal planner-score drift.
+and tracks internal planner-score drift.
 
-This is important because real engineering systems rarely have a perfect model of the environment.
+The purpose is **not** to prove that the planner is robust to every possible modeling error.
+
+Instead, it tests whether the observed behavior remains defensible when the planning model is deliberately imperfect.
+
+This is important because real engineering systems rarely operate with a perfect model of their environment.
 
 ---
 
-# 9. Predictive Control
+# 12. Predictive Control — Correcting an Early Assumption
 
-One of the lessons from the early versions was that simply calling something "predictive" is not enough.
+One of the most important development lessons was that simply calling a controller **"predictive"** does not make it predictive.
 
-The corrected DARC implementation actually propagates future user state when evaluating future decisions.
+An early implementation discounted future disturbance but did not correctly propagate future user mobility.
+
+The corrected DARC implementation explicitly propagates future user state when evaluating future decisions.
 
 Conceptually:
 
@@ -318,7 +515,7 @@ Conceptually:
 Current state
      │
      ▼
-Predict user movement
+Predict future user movement
      │
      ▼
 Estimate future AP conditions
@@ -330,31 +527,39 @@ Estimate future rate / risk
 Choose association
 ```
 
-The horizon-sensitivity experiment evaluates different prediction horizons.
+## Horizon sensitivity
 
-In the tested configuration, increasing the horizon from **1 → 12 steps** reduced outage from approximately:
+In the tested configuration, increasing the prediction horizon from **1 → 12 steps** changed:
 
 ```text
+Outage:
+
 0.465  →  0.210
 ```
 
-while increasing served-demand fraction from approximately:
+and:
 
 ```text
+Served-demand fraction:
+
 0.812  →  0.951
 ```
 
-This supports the intuition that, under the stated simulation model, giving the controller more temporal context can improve its decisions.
+These results support the conclusion that, **under this simulation model**, additional temporal context can improve predictive-control decisions.
+
+They should not be interpreted as proof that a longer horizon is universally better in real networks.
 
 ---
 
-# 10. Stress Testing
+# 13. Stress Testing
 
-The system is also evaluated across combinations of:
+A controller that performs well in one carefully chosen scenario is not enough.
 
-- disturbance volatility
-- maximum user speed
-- random seeds
+DISTMOB therefore varies:
+
+- disturbance volatility;
+- maximum user speed;
+- random seed.
 
 The stress grid covers **6 disturbance/mobility combinations**:
 
@@ -368,77 +573,123 @@ The stress grid covers **6 disturbance/mobility combinations**:
            └──────┴──────┴──────┘
 ```
 
-This asks a more useful question than:
+The purpose is not simply:
 
-> "Does the controller work on one scenario?"
+> "Does the controller work?"
 
-Instead:
+but:
 
-> **How does the controller behave when the environment becomes more difficult?**
+> **"How does the controller behave as mobility and disturbance conditions become more difficult?"**
 
 ---
 
-# 11. Statistical Validation
+# 14. Statistical Validation
 
 The project does not rely only on visually comparing averages.
 
 The seed-level analysis includes:
 
-- paired t-test
-- Wilcoxon signed-rank test
-- Cohen's \(d_z\)
-- bootstrap confidence intervals
-- Holm multiple-comparison correction
+- paired t-test;
+- Wilcoxon signed-rank test;
+- Cohen's \(d_z\);
+- bootstrap confidence intervals;
+- Holm multiple-comparison correction.
 
-An important result is that:
+## Important statistical result
 
-> **The served-demand improvement of stable-global over load-aware is positive but not statistically significant after Holm correction.**
+The served-demand improvement of Stable-global over Load-aware is **positive but not statistically significant after Holm correction**.
 
-This is an important limitation of the result — and deliberately remains in the README.
-
-The project therefore does **not** make the claim:
+Therefore, the project does **not** claim:
 
 > "Stable-global statistically dominates every baseline."
 
-Instead, the defensible claim is narrower:
+The narrower and defensible conclusion is:
 
-> **Stable-global consistently improves several important metrics under the tested model, particularly outage, fairness, latency proxy and handover stability, while introducing a measurable P05-throughput trade-off.**
+> **Under the tested simulation model, Stable-global improves several important metrics — particularly outage, fairness, latency proxy and handover stability — while introducing a measurable P05-throughput trade-off.**
+
+That distinction between **observed improvement** and **statistically established improvement** is intentional.
 
 ---
 
-# 12. External-Trace Extension
+# 15. What Happens When the Environment Is Evaluated on the Same Trace?
 
-The core benchmark intentionally remains **synthetic and frozen**.
+The core benchmark uses controlled, frozen traces.
+
+This allows different policies to experience the **same underlying mobility/disturbance trajectory**, making counterfactual policy comparison cleaner.
+
+Conceptually:
+
+```text
+                  Same trace
+                     │
+        ┌────────────┼────────────┐
+        │            │            │
+       RSSI      Load-aware    Stable-global
+        │            │            │
+        └────────────┼────────────┘
+                     │
+                 Evaluation
+```
+
+The goal is to ensure that differences in results are attributable to the **policy**, rather than each policy receiving a different random environment.
+
+---
+
+# 16. Runtime and Computational Cost
+
+DISTMOB also includes runtime benchmarking.
+
+The final release uses a **frozen runtime protocol** for its runtime claims.
+
+Historical v10 timings are explicitly treated as **non-comparable** because the timed operation and implementation/workload changed between versions.
+
+Therefore:
+
+> **Only final-release protocol measurements should be used when making runtime comparisons.**
+
+This avoids presenting an apples-to-oranges runtime improvement as an algorithmic speedup.
+
+---
+
+# 17. External-Trace Extension
+
+The main benchmark intentionally remains **synthetic and frozen**.
 
 This is deliberate.
 
-A controlled simulation allows different controllers to experience the **same underlying trajectory**, making counterfactual comparison cleaner.
+The controlled simulator provides observability and repeatability that may not be available in external datasets.
 
-As an optional external-validation path, the repository documents the **X-Fi public Wi-Fi association dataset**, which contains:
+As an optional validation path, the repository documents the **X-Fi public Wi-Fi association dataset**, which contains:
 
-- GPS traces
-- Wi-Fi association attempts
-- signal measurements
-- TCP performance fields
+- GPS traces;
+- Wi-Fi association attempts;
+- signal measurements;
+- TCP performance fields;
 
 across:
 
-- Paris
-- Bologna
-- Macao
-- Los Angeles
+- Paris;
+- Bologna;
+- Macao;
+- Los Angeles.
 
-The external dataset is **not copied into this repository**. Users should obtain it from the original authors and follow the associated citation and usage terms.
+The external dataset is **not copied into this repository**.
 
-Source: Yang et al., *Revisiting WiFi offloading in the wild for V2I applications* (Computer Networks, 2022).
+Users should obtain it from the original authors and follow the dataset's citation and usage terms.
+
+The external trace is intended to help examine whether the project's mobility/association assumptions are plausible on real-world measurements.
+
+It is **not used as evidence for the primary controlled benchmark**, and it does not replace the synthetic experiment.
+
+**Source:** Yang et al., *Revisiting WiFi offloading in the wild for V2I applications*, Computer Networks, 2022.
 
 ---
 
-# 13. What I Learned From the Project
+# 18. What I Learned From the Project
 
-The most important outcome wasn't simply finding a controller with better numbers.
+The most important outcome was not simply finding a controller with better numbers.
 
-The project went through a cycle of:
+The project followed a repeated engineering/research cycle:
 
 ```text
 Hypothesis
@@ -451,88 +702,110 @@ Unexpected result
     ↓
 Investigate assumption
     ↓
-Fix / redesign experiment
+Fix implementation / redesign experiment
     ↓
 Ablation / validation
     ↓
 More defensible conclusion
 ```
 
-Several examples:
+## Lesson 1 — "Predictive" must actually predict
 
-### 1. "Predictive" must actually predict
-
-An early implementation discounted future disturbance but did not properly propagate future mobility.
+An early implementation did not correctly propagate future mobility.
 
 **Lesson:** a label is not evidence of a mechanism.
 
-### 2. A strong baseline can beat a complicated controller
+---
 
-Instead of hiding this, the project made the comparison part of the research story.
+## Lesson 2 — Complexity is not automatically an advantage
 
-**Lesson:** complexity is not automatically an advantage.
+A sophisticated controller does not deserve to win simply because it contains more components.
 
-### 3. Optimization objectives create behavior
+The project deliberately retains strong classical and simpler baselines.
 
-The zero-switch ablation showed that stability regularization directly drives the low-churn behavior.
-
-**Lesson:** understand what the objective function is incentivizing.
-
-### 4. More metrics reveal more truth
-
-Average throughput alone would have hidden important differences.
-
-**Lesson:** evaluate the distribution and tail behavior, not only the mean.
-
-### 5. Model mismatch matters
-
-The planner and evaluator should not silently assume perfect agreement.
-
-**Lesson:** engineering systems operate with imperfect models.
+**Lesson:** compare against meaningful alternatives before claiming that added complexity is useful.
 
 ---
 
-# 14. Technical Architecture
+## Lesson 3 — Optimization objectives create behavior
+
+Removing the switch penalty increased mean handovers from approximately:
 
 ```text
-                    DISTMOB
-                       │
-          ┌────────────┴────────────┐
-          │                         │
-       Mobility                 Disturbance
-       Process                    Process
-          │                         │
-          └────────────┬────────────┘
-                       │
-                 Network State
-                       │
-              ┌────────┴────────┐
-              │                 │
-         Local Policies    Global Planner
-              │                 │
-              └────────┬────────┘
-                       │
-              Supervisory Control
-                       │
-                       ▼
-                AP Association
-                       │
-                       ▼
-                  Evaluation
-                       │
-          ┌────────────┼────────────┐
-          │            │            │
-         QoS        Fairness      Stability
-          │            │            │
-          └────────────┴────────────┘
-                       │
-                       ▼
-             Statistical Analysis
+4.4 → 109.9
+```
+
+**Lesson:** understand what the objective function explicitly incentivizes.
+
+---
+
+## Lesson 4 — Average metrics can hide important failures
+
+Average throughput alone would not have exposed the P05-throughput trade-off.
+
+**Lesson:** inspect distributions and tail behavior, not only means.
+
+---
+
+## Lesson 5 — Model mismatch matters
+
+The planner and evaluator should not silently assume perfect agreement.
+
+**Lesson:** real engineering systems operate with imperfect models.
+
+---
+
+## Lesson 6 — A negative or non-significant result is still useful
+
+The served-demand improvement was positive but did not survive Holm correction.
+
+Instead of hiding that result, the final analysis reports it explicitly.
+
+**Lesson:** a good experiment should be capable of disproving or weakening your preferred hypothesis.
+
+---
+
+# 19. Technical Architecture
+
+```text
+                         DISTMOB
+                            │
+              ┌─────────────┴─────────────┐
+              │                           │
+          Mobility                    Disturbance
+           Process                      Process
+              │                           │
+              └─────────────┬─────────────┘
+                            │
+                      Network State
+                            │
+              ┌─────────────┴─────────────┐
+              │                           │
+        Local Policies              Global Planner
+              │                           │
+              └─────────────┬─────────────┘
+                            │
+                   Supervisory Control
+                            │
+                            ▼
+                     AP Association
+                            │
+                            ▼
+                       Evaluation
+                            │
+             ┌──────────────┼──────────────┐
+             │              │              │
+            QoS          Fairness       Stability
+             │              │              │
+             └──────────────┼──────────────┘
+                            │
+                            ▼
+                  Statistical Analysis
 ```
 
 ---
 
-# 15. Repository Structure
+# 20. Repository Structure
 
 ```text
 DISTMOB/
@@ -548,6 +821,7 @@ DISTMOB/
 │   └── build_report.py
 │
 ├── tests/
+│
 ├── external_trace/
 │   └── test_distmob.py
 │
@@ -566,27 +840,27 @@ DISTMOB/
 
 ---
 
-# 16. Reproduce the Experiments
+# 21. Reproduce the Experiments
 
-Install dependencies:
+## Install dependencies
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-Run the complete experiment suite:
+## Run the complete experiment suite
 
 ```bash
 python scripts/run_all_experiments.py
 ```
 
-Build the report:
+## Build the report
 
 ```bash
 python scripts/build_report.py
 ```
 
-Run tests:
+## Run tests
 
 ```bash
 pytest -q
@@ -600,53 +874,88 @@ python scripts/build_report.py
 pytest -q
 ```
 
+The repository is designed so that the experiment pipeline, generated results, figures, report, and validation checks can be inspected rather than relying only on the final claims.
+
 ---
 
-# 17. Scientific Scope and Limitations
+# 22. Scientific Scope and Limitations
 
 DISTMOB is a **synthetic comparative control study**.
 
 It is **not**:
 
-- a packet-level 4G/5G simulator,
-- a complete 3GPP network simulator,
-- field-validation evidence,
+- a packet-level 4G/5G simulator;
+- a complete 3GPP network simulator;
+- field-validation evidence;
+- a production network controller;
 - a claim of universal controller superiority.
 
-The model does not attempt to reproduce every detail of a production cellular/Wi-Fi stack such as full packet scheduling, detailed interference/fading, MCS selection, queue dynamics, or real handover signaling.
+The model does not attempt to reproduce every detail of a production cellular/Wi-Fi stack, such as:
 
-The strongest defensible conclusion is narrower:
+- full packet scheduling;
+- detailed interference/fading;
+- MCS selection;
+- queue dynamics;
+- real handover signaling;
+- complete radio-protocol behavior.
 
-> **Under the stated simulation model, stable-global improves outage, fairness, latency proxy and mobility stability, while retaining the outage/fairness advantage under the tested planner/evaluator mismatch conditions.**
+The global planner is also centralized in the current design, which creates a scalability/deployment limitation compared with a fully distributed production architecture.
 
-The project also documents a real downside:
+The external-trace path is documented as an extension rather than primary evidence.
 
-> **P05 throughput decreases by 12.1%, and served-demand improvement is not statistically significant at the seed level.**
-
-These trade-offs are part of the result, not something removed from it.
+Most importantly, the experiments evaluate the controllers **under the stated simulator assumptions**.
 
 ---
 
-# 18. Final Takeaway
+# 23. What the Results Do — and Do Not — Show
 
-DISTMOB started as a question about **whether disturbance-aware AP association could outperform conventional handover rules**.
+### The results support:
 
-It evolved into a broader study of:
+- lower outage for Stable-global under the tested model;
+- higher Jain fairness;
+- lower latency proxy;
+- substantially lower handover rate;
+- persistence of the main outage/fairness advantage under the tested planner/evaluator mismatch conditions;
+- a strong relationship between the explicit switch penalty and low handover behavior.
 
-> **How should a network make association decisions when users move, APs become congested, disturbances change over time, models are imperfect, and switching itself has a cost?**
+### The results do not establish:
+
+- universal superiority of Stable-global;
+- statistically significant improvement in served-demand fraction;
+- better P05 throughput;
+- real-world 4G/5G performance;
+- production-scale deployment readiness;
+- superiority under every possible mobility, disturbance, or network configuration.
+
+This distinction is central to the project's interpretation.
+
+---
+
+# 24. Final Takeaway
+
+DISTMOB started with a relatively simple question:
+
+> **Can disturbance-aware AP association outperform conventional handover rules?**
+
+It evolved into a broader study:
+
+> **How should a network make AP-association decisions when users move, APs become congested, disturbances change over time, models are imperfect, and switching itself has a cost?**
 
 The final system combines:
 
-- predictive control,
-- robustness and safety mechanisms,
-- global constrained assignment,
-- supervisory regime control,
-- reinforcement-learning baseline,
-- controlled simulation,
-- statistical testing,
-- ablation studies,
-- model-mismatch analysis,
-- and reproducible experimentation.
+- predictive control;
+- robustness and safety mechanisms;
+- global constrained assignment;
+- supervisory regime control;
+- a reinforcement-learning baseline;
+- controlled simulation;
+- frozen-trace comparison;
+- statistical testing;
+- ablation studies;
+- model-mismatch analysis;
+- tail-QoS evaluation;
+- runtime benchmarking;
+- reproducible experimentation.
 
 The most valuable outcome is not:
 
@@ -654,6 +963,6 @@ The most valuable outcome is not:
 
 It is:
 
-> **"Here is a reproducible control system, here is how its assumptions were tested, here is where it performs well, here is where it loses, and here is evidence explaining why."**
+> **"Here is a reproducible control system; here is why the design evolved; here is how its assumptions were tested; here is where it performs well; here is where it loses; and here is evidence explaining why."**
 
-That is the engineering and research question DISTMOB is designed to answer.
+That is the engineering and research question DISTMOB is designed to investigate.
