@@ -1,0 +1,41 @@
+{
+  "release": "review-fix-v3",
+  "policy_benchmark": {
+    "environment": "frozen data/core_trace.npz",
+    "steps": 180,
+    "repeats": 3,
+    "timed_operation": "DistMobSim.run only",
+    "excluded": [
+      "trace generation",
+      "CSV/JSON writing",
+      "figure generation",
+      "PDF generation"
+    ],
+    "reported_normalizations": [
+      "ms/step",
+      "ms/user-step"
+    ]
+  },
+  "scaling_benchmark": {
+    "scenarios": [
+      {
+        "users": 24,
+        "aps": 6,
+        "steps": 60
+      },
+      {
+        "users": 50,
+        "aps": 10,
+        "steps": 60
+      },
+      {
+        "users": 100,
+        "aps": 20,
+        "steps": 30
+      }
+    ],
+    "repeats": 2,
+    "timed_operation": "DistMobSim.run only on a frozen scenario trace"
+  },
+  "historical_note": "The prior v10 runtime figures came from an earlier implementation/workload and are not apples-to-apples with this final code path."
+}

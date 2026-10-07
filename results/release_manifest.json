@@ -1,0 +1,59 @@
+{
+  "release": "presentation-polish-v2",
+  "scientific_results_changed": false,
+  "checks": {
+    "pytest": "8 passed",
+    "pdf_render": "pdfium/140 dpi",
+    "pdf_text_sanity": "clean"
+  },
+  "figures": [
+    "darc_horizon_sensitivity.png",
+    "disturbance_outage_sweep.png",
+    "disturbance_served_sweep.png",
+    "fairness_comparison.png",
+    "handover_comparison.png",
+    "latency_comparison.png",
+    "mean_satisfaction.png",
+    "network_layout.png",
+    "outage_comparison.png",
+    "p05_satisfaction.png",
+    "p05_throughput.png",
+    "planner_model_mismatch_outage.png",
+    "planner_model_mismatch_served.png",
+    "planner_model_score_drift.png",
+    "runtime_benchmark.png",
+    "scaling_runtime.png",
+    "seed_robustness_p05_throughput.png",
+    "seed_robustness_served_demand.png",
+    "served_demand.png",
+    "stress_load_aware_heatmap.png",
+    "stress_stable_global_gain.png",
+    "stress_stable_global_heatmap.png",
+    "stress_stable_global_p05_heatmap.png",
+    "trace_replay_outage.png",
+    "trace_replay_served.png",
+    "zero_switch_handover_ablation.png",
+    "zero_switch_qos_ablation.png"
+  ],
+  "results": [
+    "core_highlights.csv",
+    "core_results.csv",
+    "disturbance_sweep.csv",
+    "global_ablation.csv",
+    "global_ablation_summary.csv",
+    "horizon_sensitivity.csv",
+    "joint_stress_grid.csv",
+    "model_mismatch_sensitivity.csv",
+    "runtime_benchmark.csv",
+    "scaling_benchmark.csv",
+    "seed_robustness.csv",
+    "seed_robustness_summary.csv",
+    "significance_tests.csv",
+    "trace_replay_results.csv"
+  ],
+  "report_files": [
+    "DISTMOB_Report.md",
+    "DISTMOB_Report.pdf",
+    "preamble.tex"
+  ]
+}
